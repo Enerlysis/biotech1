@@ -350,7 +350,7 @@
           </div>`
         ).join("") || "<p>No sources returned.</p>";
 
-        document.getElementById("raw").textContent = JSON.stringify(data, null, 2);
+        
       } catch (err) {
         status.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
       } finally {
