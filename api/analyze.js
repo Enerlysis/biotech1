@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     // You can change this in Vercel Environment Variables.
     // Example:
     // OPENAI_MODEL=gpt-5.5
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const model = const model = "gpt-4.1";
 
     const prompt = `
 You are a biotech equity research assistant. This is for research only, not personalized financial advice.
