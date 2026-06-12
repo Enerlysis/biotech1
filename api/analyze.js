@@ -24,39 +24,27 @@ function extractOutputText(data) {
   return chunks.join("\n").trim();
 }
 
-function parseJsonMaybe(text) {
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("No JSON object found in model output.");
-    return JSON.parse(match[0]);
-  }
-}
-
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Use POST /api/analyze." });
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({
-      error: "Missing OPENAI_API_KEY in Vercel Environment Variables.",
-      fix: "In Vercel, go to Project → Settings → Environment Variables → add OPENAI_API_KEY → Redeploy."
-    });
-  }
-
   try {
-    const body = req.body || {};
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
+    if (req.method === "OPTIONS") {
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Use POST /api/analyze." });
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        error: "Missing OPENAI_API_KEY in Vercel."
+      });
+    }
+
+    const body = req.body || {};
     const ticker = safeString(body.ticker, 40).toUpperCase();
     const company = safeString(body.company, 120);
     const benchmark = safeString(body.index || body.benchmark, 80);
@@ -64,91 +52,40 @@ export default async function handler(req, res) {
 
     if (!ticker && !company) {
       return res.status(400).json({
-        error: "Please enter at least a ticker or company name."
+        error: "Please enter a ticker or company name."
       });
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-
-    // You can change this in Vercel Environment Variables.
-    // Example:
-    // OPENAI_MODEL=gpt-5.5
-    const model = const model = "gpt-4.1";
+    const model = "gpt-4.1";
 
     const prompt = `
-You are a biotech equity research assistant. This is for research only, not personalized financial advice.
+You are a biotech stock research assistant. This is not financial advice.
 
-Analyze this biotech company:
-- Ticker: ${ticker || "unknown"}
-- Company: ${company || "unknown"}
-- Benchmark/index: ${benchmark || "unknown"}
-- User notes: ${extraNotes || "none"}
-- Today: ${today}
+Analyze:
+Ticker: ${ticker || "unknown"}
+Company: ${company || "unknown"}
+Benchmark/index: ${benchmark || "unknown"}
+Extra notes: ${extraNotes || "none"}
 
-Use web search. Prefer reliable sources:
-- company press releases
-- SEC EDGAR filings
-- FDA pages
-- ClinicalTrials.gov
-- reputable financial/news sources
+Return ONLY valid JSON. No markdown.
 
-Return JSON only. Do not use markdown.
-
-Required tasks:
-1. Identify whether there is an upcoming PDUFA date. Do not invent one. If not found, use null.
-2. Identify next catalysts: PDUFA, AdCom, NDA/BLA, Phase 2/3 readout, IND, financing risk, earnings, data readout.
-3. Score using:
-   - clinical_data_quality, 0-10
-   - regulatory_path, 0-10
-   - financial_health_dilution, 0-10
-   - valuation_risk_reward, 0-10
-   - commercial_potential, 0-10
-   - management_governance, 0-10
-   - liquidity_technical_risk, 0-10
-4. Overall score must use these weights:
-   - clinical data quality: 25%
-   - regulatory path: 20%
-   - financial health/dilution: 17.5%
-   - valuation/risk-reward: 17.5%
-   - commercial potential: 10%
-   - management/governance: 5%
-   - liquidity/technical risk: 5%
-5. Penalize:
-   - severe dilution
-   - low cash runway
-   - reverse splits
-   - toxic financing
-   - promotional microcap behavior
-   - weak trial design
-   - unclear evidence
-6. Include URLs in sources.
-7. Be transparent when information is missing.
-8. Do not say "buy", "sell", or "guaranteed".
-
-Return exactly this JSON shape:
+Use this exact JSON shape:
 {
   "ticker": "string",
   "company_name": "string",
   "benchmark_index": "string",
   "overall_score_0_100": number,
-  "verdict": "string, no buy/sell instruction",
+  "verdict": "string",
   "confidence_0_100": number,
   "pdufa": {
-    "date": "YYYY-MM-DD or null",
-    "drug": "string or null",
-    "indication": "string or null",
-    "status": "string",
-    "evidence_summary": "string",
-    "confidence_0_100": number
+    "date": null,
+    "drug": null,
+    "indication": null,
+    "status": "Not verified in this basic version",
+    "evidence_summary": "Live web verification is disabled in this test version.",
+    "confidence_0_100": 20
   },
-  "next_catalysts": [
-    {
-      "catalyst": "string",
-      "expected_timing": "string",
-      "importance": "string",
-      "risk": "string"
-    }
-  ],
+  "next_catalysts": [],
   "component_scores": {
     "clinical_data_quality": number,
     "regulatory_path": number,
@@ -162,14 +99,8 @@ Return exactly this JSON shape:
   "positive_factors": ["string"],
   "explanation": "string",
   "missing_information": ["string"],
-  "sources": [
-    {
-      "title": "string",
-      "url": "string",
-      "why_it_matters": "string"
-    }
-  ],
-  "disclaimer": "string"
+  "sources": [],
+  "disclaimer": "Research only, not financial advice."
 }
 `;
 
@@ -181,23 +112,21 @@ Return exactly this JSON shape:
       },
       body: JSON.stringify({
         model,
-        tools: [
-          {
-            type: "web_search",
-            search_context_size: "low"
-          }
-        ],
-        tool_choice: "auto",
-        input: prompt,
-        text: {
-          format: {
-            type: "json_object"
-          }
-        }
+        input: prompt
       })
     });
 
-    const raw = await response.json();
+    const rawText = await response.text();
+
+    let raw;
+    try {
+      raw = JSON.parse(rawText);
+    } catch (e) {
+      return res.status(502).json({
+        error: "OpenAI returned non-JSON response.",
+        rawText
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({
@@ -217,13 +146,11 @@ Return exactly this JSON shape:
     }
 
     let analysis;
-
     try {
-      analysis = parseJsonMaybe(outputText);
+      analysis = JSON.parse(outputText);
     } catch (e) {
       return res.status(502).json({
-        error: "Could not parse JSON from model output.",
-        detail: e.message,
+        error: "Model did not return valid JSON.",
         outputText
       });
     }
@@ -231,7 +158,7 @@ Return exactly this JSON shape:
     return res.status(200).json(analysis);
   } catch (error) {
     return res.status(500).json({
-      error: "Server function failed.",
+      error: "Server function crashed.",
       detail: error?.message || String(error)
     });
   }
